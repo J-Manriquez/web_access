@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:home_widget/home_widget.dart';
+// import 'package:home_widget/home_widget.dart';
 import 'package:modal_bottom_sheet/modal_bottom_sheet.dart';
 import 'dart:convert';
 
@@ -26,10 +26,10 @@ class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
   @override
-  _HomePageState createState() => _HomePageState();
+  HomePageState createState() => HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class HomePageState extends State<HomePage> {
   List<Map<String, dynamic>> bookmarks = [];
   List<Map<String, dynamic>> groups = [];
 
@@ -63,7 +63,7 @@ class _HomePageState extends State<HomePage> {
       bookmarks.add({'url': url, 'name': name});
     });
     await _saveBookmarks();
-    await _updateWidget();
+    await _updateWidget(name, url, isGroup: false);
   }
 
   void _addGroup(String name) async {
@@ -71,7 +71,41 @@ class _HomePageState extends State<HomePage> {
       groups.add({'name': name, 'bookmarks': []});
     });
     await _saveGroups();
-    await _updateWidget();
+    await _updateWidget(name, '', isGroup: true);
+  }
+
+  void _editBookmark(int index, String url, String name) async {
+    setState(() {
+      bookmarks[index] = {'url': url, 'name': name};
+    });
+    await _saveBookmarks();
+    await _updateWidget(name, url, isGroup: false);
+  }
+
+  void _editGroup(int index, String name) async {
+    setState(() {
+      groups[index]['name'] = name;
+    });
+    await _saveGroups();
+    await _updateWidget(name, '', isGroup: true);
+  }
+
+  void _deleteBookmark(int index) async {
+    String name = bookmarks[index]['name'];
+    setState(() {
+      bookmarks.removeAt(index);
+    });
+    await _saveBookmarks();
+    await _removeWidget(name);
+  }
+
+  void _deleteGroup(int index) async {
+    String name = groups[index]['name'];
+    setState(() {
+      groups.removeAt(index);
+    });
+    await _saveGroups();
+    await _removeWidget(name);
   }
 
   Future<void> _saveBookmarks() async {
@@ -86,13 +120,25 @@ class _HomePageState extends State<HomePage> {
         'groups', groups.map((e) => json.encode(e)).toList());
   }
 
-  Future<void> _updateWidget() async {
-    await HomeWidget.saveWidgetData<String>('bookmarks', json.encode(bookmarks));
-    await HomeWidget.saveWidgetData<String>('groups', json.encode(groups));
-    await HomeWidget.updateWidget(
-      name: 'BookmarkWidgetProvider',
-      iOSName: 'BookmarkWidget',
-    );
+  Future<void> _updateWidget(String name, String url,
+      {required bool isGroup}) async {
+    // await HomeWidget.saveWidgetData<String>('${name}_type', isGroup ? 'group' : 'bookmark');
+    // await HomeWidget.saveWidgetData<String>('${name}_url', url);
+    // await HomeWidget.updateWidget(
+    //   name: 'BookmarkWidgetProvider',
+    //   iOSName: 'BookmarkWidget',
+    //   qualifiedAndroidName: 'com.ando.devs.web_access.BookmarkWidgetProvider',
+    // );
+  }
+
+  Future<void> _removeWidget(String name) async {
+    // await HomeWidget.saveWidgetData<String?>('${name}_type', null);
+    // await HomeWidget.saveWidgetData<String?>('${name}_url', null);
+    // await HomeWidget.updateWidget(
+    //   name: 'BookmarkWidgetProvider',
+    //   iOSName: 'BookmarkWidget',
+    //   qualifiedAndroidName: 'com.ando.devs.web_access.BookmarkWidgetProvider',
+    // );
   }
 
   @override
@@ -101,13 +147,40 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(title: const Text('Bookmark Widget App')),
       body: ListView(
         children: [
-          ...bookmarks.map((bookmark) => ListTile(
-                title: Text(bookmark['name']),
-                onTap: () => _launchUrl(bookmark['url']),
+          ...bookmarks.asMap().entries.map((entry) => ListTile(
+                title: Text(entry.value['name']),
+                onTap: () => _launchUrl(entry.value['url']),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.edit),
+                      onPressed: () =>
+                          _showBookmarkDialog(editIndex: entry.key),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.delete),
+                      onPressed: () => _deleteBookmark(entry.key),
+                    ),
+                  ],
+                ),
               )),
-          ...groups.map((group) => ListTile(
-                title: Text(group['name']),
-                onTap: () => _showGroupModal(group),
+          ...groups.asMap().entries.map((entry) => ListTile(
+                title: Text(entry.value['name']),
+                onTap: () => _showGroupModal(entry.value, entry.key),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.edit),
+                      onPressed: () => _showGroupDialog(editIndex: entry.key),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.delete),
+                      onPressed: () => _deleteGroup(entry.key),
+                    ),
+                  ],
+                ),
               )),
         ],
       ),
@@ -146,14 +219,19 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _showBookmarkDialog() {
+  void _showBookmarkDialog({int? editIndex}) {
     TextEditingController urlController = TextEditingController();
     TextEditingController nameController = TextEditingController();
+
+    if (editIndex != null) {
+      urlController.text = bookmarks[editIndex]['url'];
+      nameController.text = bookmarks[editIndex]['name'];
+    }
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Add Bookmark'),
+        title: Text(editIndex == null ? 'Add Bookmark' : 'Edit Bookmark'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -173,9 +251,14 @@ class _HomePageState extends State<HomePage> {
             onPressed: () => Navigator.pop(context),
           ),
           TextButton(
-            child: const Text('Add'),
+            child: Text(editIndex == null ? 'Add' : 'Save'),
             onPressed: () {
-              _addBookmark(urlController.text, nameController.text);
+              if (editIndex == null) {
+                _addBookmark(urlController.text, nameController.text);
+              } else {
+                _editBookmark(
+                    editIndex, urlController.text, nameController.text);
+              }
               Navigator.pop(context);
             },
           ),
@@ -184,13 +267,17 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _showGroupDialog() {
+  void _showGroupDialog({int? editIndex}) {
     TextEditingController nameController = TextEditingController();
+
+    if (editIndex != null) {
+      nameController.text = groups[editIndex]['name'];
+    }
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Add Group'),
+        title: Text(editIndex == null ? 'Add Group' : 'Edit Group'),
         content: TextField(
           controller: nameController,
           decoration: const InputDecoration(labelText: 'Group Name'),
@@ -201,9 +288,13 @@ class _HomePageState extends State<HomePage> {
             onPressed: () => Navigator.pop(context),
           ),
           TextButton(
-            child: const Text('Add'),
+            child: Text(editIndex == null ? 'Add' : 'Save'),
             onPressed: () {
-              _addGroup(nameController.text);
+              if (editIndex == null) {
+                _addGroup(nameController.text);
+              } else {
+                _editGroup(editIndex, nameController.text);
+              }
               Navigator.pop(context);
             },
           ),
@@ -212,27 +303,128 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _showGroupModal(Map<String, dynamic> group) {
+  void _showGroupModal(Map<String, dynamic> group, int groupIndex) {
     showMaterialModalBottomSheet(
       context: context,
       builder: (context) => SizedBox(
         height: 300,
-        child: ListView(
+        child: Column(
           children: [
-            Text(group['name'], style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            ...group['bookmarks'].map((bookmark) => ListTile(
-              title: Text(bookmark['name']),
-              onTap: () => _launchUrl(bookmark['url']),
-            )),
+            Text(group['name'],
+                style:
+                    const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            Expanded(
+              child: ListView(
+                children: [
+                  ...group['bookmarks'].asMap().entries.map((entry) => ListTile(
+                        title: Text(entry.value['name']),
+                        onTap: () => _launchUrl(entry.value['url']),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: Icon(Icons.edit),
+                              onPressed: () => _showBookmarkDialogInGroup(
+                                  groupIndex, entry.key),
+                            ),
+                            IconButton(
+                              icon: Icon(Icons.delete),
+                              onPressed: () => _deleteBookmarkFromGroup(
+                                  groupIndex, entry.key),
+                            ),
+                          ],
+                        ),
+                      )),
+                ],
+              ),
+            ),
+            ElevatedButton(
+              child: Text('Add Bookmark to Group'),
+              onPressed: () => _showBookmarkDialogInGroup(groupIndex),
+            ),
           ],
         ),
       ),
     );
   }
 
+  void _showBookmarkDialogInGroup(int groupIndex, [int? editIndex]) {
+    TextEditingController urlController = TextEditingController();
+    TextEditingController nameController = TextEditingController();
+
+    if (editIndex != null) {
+      urlController.text = groups[groupIndex]['bookmarks'][editIndex]['url'];
+      nameController.text = groups[groupIndex]['bookmarks'][editIndex]['name'];
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(editIndex == null
+            ? 'Add Bookmark to Group'
+            : 'Edit Bookmark in Group'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: urlController,
+              decoration: const InputDecoration(labelText: 'URL'),
+            ),
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(labelText: 'Name'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            child: const Text('Cancel'),
+            onPressed: () => Navigator.pop(context),
+          ),
+          TextButton(
+            child: Text(editIndex == null ? 'Add' : 'Save'),
+            onPressed: () {
+              if (editIndex == null) {
+                _addBookmarkToGroup(
+                    groupIndex, urlController.text, nameController.text);
+              } else {
+                _editBookmarkInGroup(groupIndex, editIndex, urlController.text,
+                    nameController.text);
+              }
+              Navigator.pop(context);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _addBookmarkToGroup(int groupIndex, String url, String name) async {
+    setState(() {
+      groups[groupIndex]['bookmarks'].add({'url': url, 'name': name});
+    });
+    await _saveGroups();
+  }
+
+  void _editBookmarkInGroup(
+      int groupIndex, int bookmarkIndex, String url, String name) async {
+    setState(() {
+      groups[groupIndex]['bookmarks']
+          [bookmarkIndex] = {'url': url, 'name': name};
+    });
+    await _saveGroups();
+  }
+
+  void _deleteBookmarkFromGroup(int groupIndex, int bookmarkIndex) async {
+    setState(() {
+      groups[groupIndex]['bookmarks'].removeAt(bookmarkIndex);
+    });
+    await _saveGroups();
+  }
+
   Future<void> _launchUrl(String url) async {
-    if (await canLaunch(url)) {
-      await launch(url);
+    if (await canLaunchUrl(Uri.parse(url))) {
+      await launchUrl(Uri.parse(url));
     } else {
       throw 'Could not launch $url';
     }
